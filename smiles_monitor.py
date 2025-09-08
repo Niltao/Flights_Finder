@@ -20,8 +20,9 @@ START_DATE = os.getenv("START_DATE", "2025-07-01")   # YYYY-MM-DD
 DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
 INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "6"))
 
-TELEGRAM_TOKEN = os.getenv("8305582825:AAH6sUivu8V-B3iVM_7nskqI_lAaaMX5uPE")
-TELEGRAM_CHAT_ID = os.getenv("584262455")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
 
 # API endpoint observado (pode mudar ao longo do tempo)
 API_URL = "https://api-air-flightsearch-blue.smiles.com.br/v1/airlines/search"
@@ -339,3 +340,4 @@ def main_loop():
 
 if __name__ == "__main__":
     main_loop()
+
