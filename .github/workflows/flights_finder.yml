@@ -2,27 +2,26 @@ name: Smiles Monitor
 
 on:
   schedule:
-    - cron: "0 */6 * * *"  # roda a cada 6 horas
-  workflow_dispatch:        # permite rodar manualmente se quiser
+    - cron: "0 */6 * * *"   # roda a cada 6 horas
+  workflow_dispatch:
 
 jobs:
-  build:
+  run:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v3
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
-      
+          python-version: '3.11'
       - name: Install dependencies
-        run: pip install -r requirements.txt
-      
-      - name: Run script
+        run: pip install requests
+      - name: Run monitor
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ORIGIN: ${{ secrets.ORIGIN }}
+          DESTINATIONS: ${{ secrets.DESTINATIONS }}
+          START_DATE: ${{ secrets.START_DATE }}
+          DAYS_RANGE: ${{ secrets.DAYS_RANGE }}
         run: python smiles_monitor.py
