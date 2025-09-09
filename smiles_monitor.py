@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # -----------------------
 ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
-START_DATE = os.getenv("START_DATE", "2025-07-01")   # YYYY-MM-DD
+START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
 DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
 INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "6"))
 
@@ -339,5 +339,6 @@ def main_loop():
         time.sleep(INTERVAL_HOURS * 3600)
 
 if __name__ == "__main__":
-    main_loop()
+    run_scan_once()
+
 
