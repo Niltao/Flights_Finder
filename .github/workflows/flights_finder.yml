@@ -2,7 +2,7 @@ name: Smiles Monitor
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # roda a cada 6 horas
+    - cron: "0 */3 * * *"   # roda a cada 3 horas
   workflow_dispatch:
 
 jobs:
