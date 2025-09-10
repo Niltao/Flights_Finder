@@ -1,226 +1,121 @@
-# smiles_monitor.py
-# Busca Smiles (GIG -> NRT/HND), gera alertas no Telegram
-# Destaca voos até 170k e sempre mostra a melhor oferta geral
-
 import os
-import time
-import re
 import requests
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
 
 # -----------------------
-# CONFIG
+# Configurações vindas do GitHub Secrets
 # -----------------------
-ORIGIN = os.getenv("ORIGIN", "GIG")
-DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
-START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
-DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
-INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # <-- fixo 3h
-MILES_LIMIT = 170000  # limite de milhas para alerta
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+ORIGIN = os.getenv("ORIGIN", "GIG")  # aeroporto de origem
+DESTINATIONS = os.getenv("DESTINATIONS", "MIA,JFK,ORD").split(",")  # destinos separados por vírgula
+START_DATE = os.getenv("START_DATE", "2025-09-01")  # data inicial YYYY-MM-DD
+DAYS_RANGE = int(os.getenv("DAYS_RANGE", "30"))  # quantidade de dias a partir da inicial
 
-API_URL = "https://api-air-flightsearch-blue.smiles.com.br/v1/airlines/search"
+# Limite de milhas configurável via Secrets
+MILES_LIMIT = int(os.getenv("MILES_LIMIT", "170000"))
 
-HEADERS = {
-    "accept": "application/json, text/plain, */*",
-    "origin": "https://www.smiles.com.br",
-    "referer": "https://www.smiles.com.br/",
-    "user-agent": "Mozilla/5.0"
-}
 
 # -----------------------
-# FUNÇÕES AUXILIARES
+# Funções auxiliares
 # -----------------------
-def send_telegram(text: str) -> None:
+def send_telegram(message: str):
+    """Envia mensagem para o Telegram"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram não configurado; ignorando envio.")
+        print("Telegram não configurado.")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        r = requests.post(url, json=payload, timeout=15)
-        if r.status_code != 200:
-            print("Falha no envio Telegram:", r.status_code, r.text[:200])
+        requests.post(url, data=payload, timeout=10)
     except Exception as e:
-        print("Erro no envio Telegram:", e)
+        print(f"Erro ao enviar para o Telegram: {e}")
 
-def extract_number_from_text(s: str) -> Optional[int]:
-    if not s: return None
-    s2 = re.sub(r"[^\d]", "", s)
-    if not s2: return None
+
+def search_flights(origin, destination, date):
+    """Consulta voos na API da Smiles"""
+    url = (
+        "https://api-airlines-prd.smiles.com.br/v1/airlines/search"
+        f"?originAirportCode={origin}&destinationAirportCode={destination}"
+        f"&departureDate={date}&adults=1&tripType=2&cabinType=all"
+    )
     try:
-        return int(s2)
-    except:
-        return None
-
-def parse_duration_to_hours(dur: str) -> float:
-    if not dur: return 9999.0
-    dur = str(dur)
-    m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?", dur)
-    if m:
-        h = int(m.group(1) or 0)
-        mm = int(m.group(2) or 0)
-        return h + mm / 60.0
-    m = re.search(r"(\d+)\s*h(?:\s*(\d+)\s*m)?", dur, re.I)
-    if m:
-        h = int(m.group(1))
-        mm = int(m.group(2) or 0)
-        return h + mm / 60.0
-    m = re.match(r"(\d{1,2}):(\d{2})", dur)
-    if m:
-        return int(m.group(1)) + int(m.group(2)) / 60.0
-    return 9999.0
-
-# -----------------------
-# CHAMADA API
-# -----------------------
-def smiles_search(origin: str, dest: str, date_str: str) -> Optional[Dict[str, Any]]:
-    params = {
-        "cabin": "ALL",
-        "originAirportCode": origin,
-        "destinationAirportCode": dest,
-        "departureDate": date_str,
-        "returnDate": "",
-        "adults": "1",
-        "children": "0",
-        "infants": "0",
-        "forceCongener": "false"
-    }
-    try:
-        r = requests.get(API_URL, headers=HEADERS, params=params, timeout=30)
-        if r.status_code == 200:
-            return r.json()
+        response = requests.get(url, timeout=20)
+        if response.status_code == 200:
+            return response.json()
         else:
-            print(f"Smiles HTTP {r.status_code} para {origin}->{dest} {date_str}")
+            print(f"Erro API {response.status_code} em {origin} -> {destination} {date}")
             return None
     except Exception as e:
-        print("Erro na request:", e)
+        print(f"Erro na requisição: {e}")
         return None
 
-# -----------------------
-# EXTRAÇÃO
-# -----------------------
-def safe_get(d: dict, *path):
-    cur = d
-    for p in path:
-        if isinstance(cur, dict) and p in cur:
-            cur = cur[p]
-        else:
-            return None
-    return cur
-
-def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    offers = []
-    if not json_data:
-        return offers
-    candidates = None
-    for k in ("flights","itineraries","offers","data","items"):
-        v = json_data.get(k)
-        if isinstance(v, list):
-            candidates = v
-            break
-    if not candidates: return offers
-
-    for it in candidates:
-        miles = (it.get("miles") or safe_get(it, "price", "miles"))
-        try:
-            miles = int(extract_number_from_text(str(miles)))
-        except:
-            miles = None
-
-        taxes = safe_get(it, "miles", "taxes") or safe_get(it, "taxes")
-        duration = it.get("duration") or safe_get(it, "totalDuration")
-        carrier = safe_get(it, "carrier", "name") or it.get("airline")
-        departure = safe_get(it, "departure") or safe_get(it, "departureTime")
-        arrival = safe_get(it, "arrival") or safe_get(it, "arrivalTime")
-        segments = it.get("segments") or []
-
-        offers.append({
-            "carrier": carrier or "?",
-            "flight_departure": departure,
-            "flight_arrival": arrival,
-            "segments": len(segments) if isinstance(segments, list) else "?",
-            "miles": miles,
-            "taxes": taxes,
-            "duration_hours": parse_duration_to_hours(duration),
-            "origin": ORIGIN,
-            "destination": it.get("destination") or "?",
-            "date": it.get("date") or date_str
-        })
-    return offers
 
 # -----------------------
-# SELEÇÃO
+# Processamento
 # -----------------------
-def choose_bests(offers: List[Dict[str,Any]]):
-    if not offers: return {}
-    bests = {
-        "best_miles": min(offers, key=lambda x: x.get("miles", 10**12)),
-        "best_duration": min(offers, key=lambda x: x.get("duration_hours", 1e9)),
-    }
-    return bests
+def process_results():
+    """Busca voos, filtra e envia para o Telegram"""
+    start_date = datetime.strptime(START_DATE, "%Y-%m-%d")
 
-# -----------------------
-# RUN ÚNICO
-# -----------------------
-def run_scan_once():
-    start = datetime.fromisoformat(START_DATE).date()
-    all_offers = []
-    for dest in DESTINATIONS:
+    for destination in DESTINATIONS:
+        valid_flights = []
+        best_flight = None
+
         for i in range(DAYS_RANGE):
-            d = start + timedelta(days=i)
-            dstr = d.strftime("%Y-%m-%d")
-            time.sleep(0.3)
-            print("Buscando", ORIGIN, "->", dest, dstr)
-            jsonr = smiles_search(ORIGIN, dest, dstr)
-            if not jsonr: continue
-            all_offers.extend(extract_offers(jsonr))
+            date = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
+            data = search_flights(ORIGIN, destination, date)
 
-    if not all_offers:
-        send_telegram("❌ Nenhuma oferta encontrada.")
-        return
+            if not data or "items" not in data:
+                continue
 
-    # separa dentro do limite e todas
-    valid_offers = [o for o in all_offers if o["miles"] and o["miles"] <= MILES_LIMIT]
-    bests = choose_bests(all_offers)
+            for item in data["items"]:
+                miles = item.get("miles", 9999999)
+                money = item.get("money", 0.0)
 
-    msgs = []
+                flight_info = {
+                    "date": date,
+                    "destination": destination,
+                    "miles": miles,
+                    "money": money,
+                }
 
-    # seção 1: até limite
-    if valid_offers:
-        msgs.append("✅ Ofertas até 170k:\n")
-        for o in valid_offers:
-            line = f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}"
-            if o == bests.get("best_miles"):
-                line += " ⚠️ Melhor milhas"
-            if o == bests.get("best_duration"):
-                line += " ⚠️ Menor duração"
-            msgs.append(line)
-    else:
-        msgs.append("❌ Nenhuma dentro do limite de 170k.")
+                # guarda o melhor voo (mesmo acima do limite)
+                if not best_flight or miles < best_flight["miles"]:
+                    best_flight = flight_info
 
-    # seção 2: melhor geral
-    if bests:
-        bg = bests["best_miles"]
-        line = f"\n🌍 Melhor geral (acima de 170k): {bg['miles']} milhas | {bg.get('taxes','?')} R$ taxas | {bg['duration_hours']:.1f}h | {bg['origin']}→{bg['destination']} em {bg['date']}"
-        msgs.append(line)
+                # guarda apenas voos dentro do limite
+                if miles <= MILES_LIMIT:
+                    valid_flights.append(flight_info)
 
-    send_telegram("\n".join(msgs))
+        # mensagem de abertura com o limite usado
+        header_msg = f"🔎 *Varredura Smiles* ({ORIGIN} → {destination})\nLimite configurado: *{MILES_LIMIT:,} milhas*\n"
+
+        # envia voos dentro do limite
+        if valid_flights:
+            msg = header_msg + "\n✈️ *Voos encontrados abaixo do limite:*\n\n"
+            for f in valid_flights:
+                msg += (
+                    f"📅 {f['date']} - {f['miles']:,} milhas "
+                    f"+ R${f['money']:.2f}\n"
+                )
+            send_telegram(msg)
+        else:
+            send_telegram(header_msg + "\n⚠️ Nenhum voo abaixo do limite encontrado.")
+
+        # envia também a melhor opção geral
+        if best_flight:
+            msg = (
+                f"⭐ *Melhor encontrada (independente do limite)*\n"
+                f"{ORIGIN} → {best_flight['destination']}\n"
+                f"📅 {best_flight['date']} - {best_flight['miles']:,} milhas "
+                f"+ R${best_flight['money']:.2f}"
+            )
+            send_telegram(msg)
+
 
 # -----------------------
-# LOOP PRINCIPAL
+# Execução
 # -----------------------
-def main_loop():
-    while True:
-        try:
-            run_scan_once()
-        except Exception as e:
-            print("Erro na execução:", e)
-        print(f"Dormindo por {INTERVAL_HOURS} horas...")
-        time.sleep(INTERVAL_HOURS * 3600)
-
 if __name__ == "__main__":
-    run_scan_once()
+    process_results()
