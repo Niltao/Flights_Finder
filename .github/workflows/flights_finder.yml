@@ -10,12 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: pip install requests
+
       - name: Run monitor
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -23,5 +26,11 @@ jobs:
           ORIGIN: ${{ secrets.ORIGIN }}
           DESTINATIONS: ${{ secrets.DESTINATIONS }}
           START_DATE: ${{ secrets.START_DATE }}
-          DAYS_RANGE: ${{ secrets.DAYS_RANGE || 90 }} # buscando 6 meses ou 3 meses
+          DAYS_RANGE: ${{ secrets.DAYS_RANGE }}
         run: python smiles_monitor.py
+
+      - name: Upload last_response.json
+        uses: actions/upload-artifact@v3
+        with:
+          name: smiles-response
+          path: last_response.json
