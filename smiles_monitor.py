@@ -20,6 +20,8 @@ START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
 DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
 INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "6"))
 
+MAX_MILES = int(os.getenv("MAX_MILES", "170000"))   # 🔥 novo limite
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -331,13 +333,15 @@ def main_loop():
             run_scan_once()
         except Exception as e:
             print("Run error:", e)
+            MAX_MILES = int(os.getenv("MAX_MILES", "170000"))  # limite configurável
+
         # sleep until next run
         print(f"Sleeping for {INTERVAL_HOURS} hours...")
         time.sleep(INTERVAL_HOURS * 3600)
 
 if __name__ == "__main__":
     run_scan_once()
-    MAX_MILES = int(os.getenv("MAX_MILES", "170000"))  # limite configurável
+
 
 
 
