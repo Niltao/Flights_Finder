@@ -304,26 +304,23 @@ def run_scan_once():
 
     # prepare Telegram message
     msgs = []
+    def format_offer(label, b):
+        warn = " ⚠️" if b["miles"] and b["miles"] > MAX_MILES else ""
+        return f"{label}{warn}: {b['miles']} milhas | {b.get('taxes','?')}R$ taxas | {b['duration_hours']:.1f}h | {b['origin']}→{b['destination']} em {b['date']}"
+    
     if bests.get("best_miles"):
-        b = bests["best_miles"]
-        msgs.append(f"🟢 Menor milhas: {b['miles']} milhas | {b.get('taxes','?')}R$ taxas | {b['duration_hours']:.1f}h | {b['origin']}→{b['destination']} em {b['date']}")
+        msgs.append(format_offer("🟢 Menor milhas", bests["best_miles"]))
     if bests.get("best_tax"):
         b = bests["best_tax"]
-        msgs.append(f"🔵 Menor taxa: {b['taxes']} R$ | {b['miles']} milhas | {b['origin']}→{b['destination']} em {b['date']}")
+        warn = " ⚠️" if b["miles"] and b["miles"] > MAX_MILES else ""
+        msgs.append(f"🔵 Menor taxa{warn}: {b['taxes']} R$ | {b['miles']} milhas | {b['origin']}→{b['destination']} em {b['date']}")
     if bests.get("best_duration"):
-        b = bests["best_duration"]
-        msgs.append(f"⏱️ Menor duração: {b['duration_hours']:.1f}h | {b['miles']} milhas | {b['origin']}→{b['destination']} em {b['date']}")
+        msgs.append(format_offer("⏱️ Menor duração", bests["best_duration"]))
     if bests.get("best_costbenefit"):
         b = bests["best_costbenefit"]
         cb = b['miles']/max(0.1,b['duration_hours'])
-        msgs.append(f"🟣 Melhor custo-benefício (milhas/h): {cb:.1f} | {b['miles']} milhas | {b['duration_hours']:.1f}h | {b['origin']}→{b['destination']} em {b['date']}")
-
-    if msgs:
-        full = "Resultado da varredura:\n" + "\n".join(msgs)
-        print(full)
-        send_telegram(full)
-    else:
-        send_telegram("Ainda não encontrei a melhor passagem (nenhuma oferta parseada).")
+        warn = " ⚠️" if b["miles"] and b["miles"] > MAX_MILES else ""
+        msgs.append(f"🟣 Melhor custo-benefício (milhas/h){warn}: {cb:.1f} | {b['miles']} milhas | {b['duration_hours']:.1f}h | {b['origin']}→{b['destination']} em {b['date']}")
 
 # -----------------------
 # Scheduler (loop principal para RUN em Render worker)
@@ -340,5 +337,8 @@ def main_loop():
 
 if __name__ == "__main__":
     run_scan_once()
+    MAX_MILES = int(os.getenv("MAX_MILES", "170000"))  # limite configurável
+
+
 
 
