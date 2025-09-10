@@ -1,10 +1,13 @@
 # smiles_monitor.py
-# Busca Smiles (GIG -> NRT/HND), gera relatórios,
-# filtra <=170k milhas e notifica por Telegram
+# Busca Smiles (GIG -> NRT/HND), gera CSV, filtra <=170k milhas
+# e notifica por Telegram a cada 3 horas
+# Agora com debug: salva JSON cru quando não encontra voos
 
 import os
 import time
+import csv
 import re
+import json
 import requests
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -16,8 +19,8 @@ ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
 START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
 DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
-INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # intervalo entre buscas
-MILES_LIMIT = int(os.getenv("MILES_LIMIT", "170000"))
+INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # <-- FIXO 3h
+MILES_LIMIT = 170000  # <-- limite de milhas
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -116,13 +119,16 @@ def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     offers = []
     if not json_data:
         return offers
+
     candidates = None
     for k in ("flights","itineraries","offers","data","items"):
         v = json_data.get(k)
         if isinstance(v, list):
             candidates = v
             break
-    if not candidates: return offers
+
+    if not candidates:
+        return offers
 
     for it in candidates:
         miles = (it.get("miles") or safe_get(it, "price", "miles"))
@@ -170,7 +176,6 @@ def choose_bests(offers: List[Dict[str,Any]]):
 # -----------------------
 def run_scan_once():
     start = datetime.fromisoformat(START_DATE).date()
-
     for dest in DESTINATIONS:
         all_offers = []
         for i in range(DAYS_RANGE):
@@ -179,43 +184,42 @@ def run_scan_once():
             time.sleep(0.3)
             print("Searching", ORIGIN, "->", dest, dstr)
             jsonr = smiles_search(ORIGIN, dest, dstr)
-            if not jsonr: continue
-            all_offers.extend(extract_offers(jsonr))
+            if not jsonr: 
+                continue
+            offers = extract_offers(jsonr)
+            all_offers.extend(offers)
+
+        header = f"🔎 Varredura Smiles ({ORIGIN} → {dest})\nLimite configurado: {MILES_LIMIT:,} milhas\n"
 
         if not all_offers:
-            send_telegram(f"🔎 Varredura Smiles ({ORIGIN} → {dest})\nNenhum voo encontrado.")
+            send_telegram(header + "⚠️ Nenhum voo encontrado.")
+            # salva resposta bruta para debug
+            with open("last_response.json", "w", encoding="utf-8") as f:
+                json.dump(jsonr, f, ensure_ascii=False, indent=2)
+            print("⚠️ Nenhum voo encontrado. JSON salvo em last_response.json")
             continue
 
+        below_limit = [o for o in all_offers if o["miles"] <= MILES_LIMIT]
         bests = choose_bests(all_offers)
-        best_miles = bests.get("best_miles")
 
-        msg_lines = [
-            f"🔎 Varredura Smiles ({ORIGIN} → {dest})",
-            f"Limite configurado: {MILES_LIMIT:,} milhas\n"
-        ]
+        msgs = [header]
+        if not below_limit:
+            msgs.append("⚠️ Nenhum voo abaixo do limite encontrado.\n")
+        for o in below_limit[:5]:  # só manda até 5 para não lotar o Telegram
+            line = f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}"
+            if o == bests.get("best_miles"):
+                line += "\n⚠️ Melhor milhas"
+            if o == bests.get("best_duration"):
+                line += "\n⚠️ Menor duração"
+            msgs.append(line)
 
-        # Checa se houve algum voo dentro do limite
-        within_limit = [o for o in all_offers if o["miles"] <= MILES_LIMIT]
-        if within_limit:
-            msg_lines.append("⚠️ Voo abaixo do limite encontrado!\n")
-            for o in within_limit[:3]:  # mostra até 3 opções
-                msg_lines.append(
-                    f"{o['miles']:,} milhas | {o.get('taxes','?')} R$ taxas | "
-                    f"{o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}"
-                )
-        else:
-            msg_lines.append("⚠️ Nenhum voo abaixo do limite encontrado.\n")
+        # Sempre manda o melhor voo geral (mesmo acima do limite)
+        if bests:
+            o = bests.get("best_miles")
+            msgs.append("\n📌 Melhor voo encontrado (sem filtro):")
+            msgs.append(f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}")
 
-        # Sempre mostra a melhor opção do período
-        if best_miles:
-            msg_lines.append(
-                f"📊 Melhor encontrado: {best_miles['miles']:,} milhas | "
-                f"{best_miles.get('taxes','?')} R$ taxas | "
-                f"{best_miles['duration_hours']:.1f}h | "
-                f"{best_miles['origin']}→{best_miles['destination']} em {best_miles['date']}"
-            )
-
-        send_telegram("\n".join(msg_lines))
+        send_telegram("\n\n".join(msgs))
 
 # -----------------------
 # Loop principal
