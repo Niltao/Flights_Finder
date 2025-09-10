@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
 START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
-DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
+DAYS_RANGE = int(os.getenv("DAYS_RANGE") or 90)
 INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # <-- FIXO 3h
 MILES_LIMIT = 170000  # <-- limite de milhas
 
@@ -235,3 +235,4 @@ def main_loop():
 
 if __name__ == "__main__":
     run_scan_once()
+
