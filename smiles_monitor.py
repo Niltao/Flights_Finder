@@ -333,7 +333,6 @@ def main_loop():
             run_scan_once()
         except Exception as e:
             print("Run error:", e)
-            MAX_MILES = int(os.getenv("MAX_MILES", "170000"))  # limite configurável
 
         # sleep until next run
         print(f"Sleeping for {INTERVAL_HOURS} hours...")
@@ -341,6 +340,7 @@ def main_loop():
 
 if __name__ == "__main__":
     run_scan_once()
+
 
 
 
