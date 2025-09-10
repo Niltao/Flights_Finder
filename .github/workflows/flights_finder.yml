@@ -23,5 +23,5 @@ jobs:
           ORIGIN: ${{ secrets.ORIGIN }}
           DESTINATIONS: ${{ secrets.DESTINATIONS }}
           START_DATE: ${{ secrets.START_DATE }}
-          DAYS_RANGE: ${{ secrets.DAYS_RANGE }}
+          DAYS_RANGE: ${{ secrets.DAYS_RANGE || 90 }}
         run: python smiles_monitor.py
