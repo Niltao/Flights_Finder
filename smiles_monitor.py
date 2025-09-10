@@ -1,14 +1,13 @@
 # smiles_monitor.py
-# Busca Smiles (GIG -> NRT/HND), gera CSV, filtra <=170k milhas
-# e notifica por Telegram a cada 3 horas
+# Busca Smiles (GIG -> NRT/HND), gera alertas no Telegram
+# Destaca voos até 170k e sempre mostra a melhor oferta geral
 
 import os
 import time
-import csv
 import re
 import requests
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # -----------------------
 # CONFIG
@@ -17,8 +16,8 @@ ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
 START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
 DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
-INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # <-- FIXO 3h
-MILES_LIMIT = 170000  # <-- limite de milhas
+INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # <-- fixo 3h
+MILES_LIMIT = 170000  # limite de milhas para alerta
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -33,20 +32,20 @@ HEADERS = {
 }
 
 # -----------------------
-# UTILIDADES
+# FUNÇÕES AUXILIARES
 # -----------------------
 def send_telegram(text: str) -> None:
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram not configured; skipping send.")
+        print("Telegram não configurado; ignorando envio.")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
     try:
         r = requests.post(url, json=payload, timeout=15)
         if r.status_code != 200:
-            print("Telegram send failed:", r.status_code, r.text[:200])
+            print("Falha no envio Telegram:", r.status_code, r.text[:200])
     except Exception as e:
-        print("Telegram send error:", e)
+        print("Erro no envio Telegram:", e)
 
 def extract_number_from_text(s: str) -> Optional[int]:
     if not s: return None
@@ -76,7 +75,7 @@ def parse_duration_to_hours(dur: str) -> float:
     return 9999.0
 
 # -----------------------
-# Chamada API
+# CHAMADA API
 # -----------------------
 def smiles_search(origin: str, dest: str, date_str: str) -> Optional[Dict[str, Any]]:
     params = {
@@ -95,14 +94,14 @@ def smiles_search(origin: str, dest: str, date_str: str) -> Optional[Dict[str, A
         if r.status_code == 200:
             return r.json()
         else:
-            print(f"Smiles HTTP {r.status_code} for {origin}->{dest} {date_str}")
+            print(f"Smiles HTTP {r.status_code} para {origin}->{dest} {date_str}")
             return None
     except Exception as e:
-        print("Request error:", e)
+        print("Erro na request:", e)
         return None
 
 # -----------------------
-# Extrai ofertas
+# EXTRAÇÃO
 # -----------------------
 def safe_get(d: dict, *path):
     cur = d
@@ -131,8 +130,6 @@ def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
             miles = int(extract_number_from_text(str(miles)))
         except:
             miles = None
-        if not miles or miles > MILES_LIMIT:
-            continue
 
         taxes = safe_get(it, "miles", "taxes") or safe_get(it, "taxes")
         duration = it.get("duration") or safe_get(it, "totalDuration")
@@ -151,12 +148,12 @@ def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
             "duration_hours": parse_duration_to_hours(duration),
             "origin": ORIGIN,
             "destination": it.get("destination") or "?",
-            "date": it.get("date") or "?"
+            "date": it.get("date") or date_str
         })
     return offers
 
 # -----------------------
-# Seleções
+# SELEÇÃO
 # -----------------------
 def choose_bests(offers: List[Dict[str,Any]]):
     if not offers: return {}
@@ -167,7 +164,7 @@ def choose_bests(offers: List[Dict[str,Any]]):
     return bests
 
 # -----------------------
-# Run único
+# RUN ÚNICO
 # -----------------------
 def run_scan_once():
     start = datetime.fromisoformat(START_DATE).date()
@@ -177,38 +174,52 @@ def run_scan_once():
             d = start + timedelta(days=i)
             dstr = d.strftime("%Y-%m-%d")
             time.sleep(0.3)
-            print("Searching", ORIGIN, "->", dest, dstr)
+            print("Buscando", ORIGIN, "->", dest, dstr)
             jsonr = smiles_search(ORIGIN, dest, dstr)
             if not jsonr: continue
             all_offers.extend(extract_offers(jsonr))
 
     if not all_offers:
-        send_telegram("Ainda não encontrei passagens até 170k milhas.")
+        send_telegram("❌ Nenhuma oferta encontrada.")
         return
 
+    # separa dentro do limite e todas
+    valid_offers = [o for o in all_offers if o["miles"] and o["miles"] <= MILES_LIMIT]
     bests = choose_bests(all_offers)
 
-    msgs = ["Resultado da varredura (até 170k):\n"]
-    for o in all_offers:
-        line = f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}"
-        if o == bests.get("best_miles"):
-            line += "\n⚠️ Melhor milhas"
-        if o == bests.get("best_duration"):
-            line += "\n⚠️ Menor duração"
+    msgs = []
+
+    # seção 1: até limite
+    if valid_offers:
+        msgs.append("✅ Ofertas até 170k:\n")
+        for o in valid_offers:
+            line = f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}"
+            if o == bests.get("best_miles"):
+                line += " ⚠️ Melhor milhas"
+            if o == bests.get("best_duration"):
+                line += " ⚠️ Menor duração"
+            msgs.append(line)
+    else:
+        msgs.append("❌ Nenhuma dentro do limite de 170k.")
+
+    # seção 2: melhor geral
+    if bests:
+        bg = bests["best_miles"]
+        line = f"\n🌍 Melhor geral (acima de 170k): {bg['miles']} milhas | {bg.get('taxes','?')} R$ taxas | {bg['duration_hours']:.1f}h | {bg['origin']}→{bg['destination']} em {bg['date']}"
         msgs.append(line)
 
-    send_telegram("\n\n".join(msgs))
+    send_telegram("\n".join(msgs))
 
 # -----------------------
-# Loop principal
+# LOOP PRINCIPAL
 # -----------------------
 def main_loop():
     while True:
         try:
             run_scan_once()
         except Exception as e:
-            print("Run error:", e)
-        print(f"Sleeping for {INTERVAL_HOURS} hours...")
+            print("Erro na execução:", e)
+        print(f"Dormindo por {INTERVAL_HOURS} horas...")
         time.sleep(INTERVAL_HOURS * 3600)
 
 if __name__ == "__main__":
