@@ -29,8 +29,8 @@ jobs:
           DAYS_RANGE: ${{ secrets.DAYS_RANGE }}
         run: python smiles_monitor.py
 
-      - name: Upload last_response.json
+      - name: Upload JSON debug
         uses: actions/upload-artifact@v4
         with:
-          name: smiles-response
-          path: last_response.json
+          name: smiles-debug
+          path: last_response_*.json
