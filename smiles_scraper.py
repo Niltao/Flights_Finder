@@ -1,8 +1,8 @@
 import asyncio
 import json
-import re
 import requests
 from playwright.async_api import async_playwright
+import os
 
 # ======================
 # CONFIGURAÇÕES
@@ -11,9 +11,9 @@ ORIGIN = "RIO"
 DESTINATION = "HND"
 DATE = "2025-09-15"
 
-# Config do Telegram (coloque suas variáveis reais aqui)
-TELEGRAM_TOKEN = "SEU_TOKEN_AQUI"
-TELEGRAM_CHAT_ID = "SEU_CHAT_ID_AQUI"
+# Pegando do GitHub Secrets (Actions)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 # ======================
@@ -22,7 +22,7 @@ TELEGRAM_CHAT_ID = "SEU_CHAT_ID_AQUI"
 def send_telegram(text: str) -> None:
     """Envia mensagem para o bot do Telegram"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram não configurado; pulando envio.")
+        print("⚠️ Telegram não configurado; pulando envio.")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -31,9 +31,9 @@ def send_telegram(text: str) -> None:
     try:
         r = requests.post(url, json=payload, timeout=15)
         if r.status_code != 200:
-            print("Telegram send failed:", r.status_code, r.text[:200])
+            print("❌ Falha no envio Telegram:", r.status_code, r.text[:200])
     except Exception as e:
-        print("Telegram send error:", e)
+        print("❌ Erro no envio Telegram:", e)
 
 
 # ======================
@@ -48,14 +48,14 @@ async def search_flight(origin, destination, date):
         # Vai direto para a página de emissão
         await page.goto("https://www.smiles.com.br/emissoes", timeout=60000)
 
-        # Origem (tentativa com diferentes seletores)
+        # Campo origem
         try:
             await page.fill('input[name="origin"]', origin)
         except:
             await page.fill('input[placeholder*="Origem"]', origin)
         await page.keyboard.press("Enter")
 
-        # Destino
+        # Campo destino
         try:
             await page.fill('input[name="destination"]', destination)
         except:
@@ -69,7 +69,7 @@ async def search_flight(origin, destination, date):
             await page.fill('input[placeholder*="Ida"]', date)
         await page.keyboard.press("Enter")
 
-        # Buscar
+        # Botão Buscar
         await page.wait_for_selector('button[type="submit"], button:has-text("Buscar")', timeout=60000)
         await page.click('button[type="submit"], button:has-text("Buscar")')
 
