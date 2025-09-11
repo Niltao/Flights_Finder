@@ -12,29 +12,35 @@ async def search_flight(origin, destination, date):
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Vai direto pra busca de passagens Smiles
+        # Acessa o site da Smiles
         await page.goto("https://www.smiles.com.br/", timeout=60000)
 
+        # Garante que o botão de "Passagens Aéreas" esteja presente e clica
+        await page.wait_for_selector('a[href*="passagens-aereas"]', timeout=60000)
+        await page.click('a[href*="passagens-aereas"]')
+
+        # Agora espera o formulário carregar
+        await page.wait_for_selector('input[placeholder*="Origem"]', timeout=60000)
+
         # Campo Origem
-        await page.wait_for_selector('input[placeholder="Digite a origem"]', timeout=60000)
-        await page.fill('input[placeholder="Digite a origem"]', origin)
+        await page.fill('input[placeholder*="Origem"]', origin)
         await page.keyboard.press("Enter")
 
         # Campo Destino
-        await page.wait_for_selector('input[placeholder="Digite o destino"]', timeout=60000)
-        await page.fill('input[placeholder="Digite o destino"]', destination)
+        await page.wait_for_selector('input[placeholder*="Destino"]', timeout=60000)
+        await page.fill('input[placeholder*="Destino"]', destination)
         await page.keyboard.press("Enter")
 
-        # Campo Data
-        await page.wait_for_selector('input[placeholder="Ida"]', timeout=60000)
-        await page.fill('input[placeholder="Ida"]', date)
+        # Campo Data (Ida)
+        await page.wait_for_selector('input[placeholder*="Ida"]', timeout=60000)
+        await page.fill('input[placeholder*="Ida"]', date)
         await page.keyboard.press("Enter")
 
         # Botão Buscar
         await page.wait_for_selector('button:has-text("Buscar")', timeout=60000)
         await page.click('button:has-text("Buscar")')
 
-        # Espera os resultados aparecerem
+        # Espera os resultados carregarem
         await page.wait_for_selector("div.flight-card", timeout=60000)
 
         flights = await page.locator("div.flight-card").all_inner_texts()
