@@ -1,26 +1,35 @@
-name: Run scraper
+name: Run Smiles Scraper
 
 on:
-  schedule:
-    - cron: "0 9 * * *" # executa todo dia às 9h UTC (~6h da manhã no Brasil)
-  workflow_dispatch:
+  workflow_dispatch:   # permite execução manual pela UI
+  #schedule:           # opcional: agendamento
+  #  - cron: '0 9 * * *'  # exemplo: todo dia às 09:00 UTC
 
 jobs:
-  run:
+  run-scraper:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
-          pip install playwright
-          playwright install chromium
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers and system deps
+        run: |
+          python -m playwright install --with-deps chromium
 
       - name: Run scraper
-        run: python smiles_scraper.py
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python smiles_scraper.py
