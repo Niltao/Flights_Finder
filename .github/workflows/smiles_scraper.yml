@@ -3,7 +3,7 @@ name: Run scraper
 on:
   schedule:
     - cron: "0 9 * * *" # executa todo dia às 9h UTC (~6h da manhã no Brasil)
-  workflow_dispatch: # permite rodar manualmente
+  workflow_dispatch:
 
 jobs:
   run:
