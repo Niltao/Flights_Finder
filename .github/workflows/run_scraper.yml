@@ -1,14 +1,11 @@
 name: Run Smiles Scraper
 
 on:
-  workflow_dispatch:   # permite execução manual pela UI
-  #schedule:           # opcional: agendamento
-  #  - cron: '0 9 * * *'  # exemplo: todo dia às 09:00 UTC
+  workflow_dispatch:
 
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -31,5 +28,21 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ORIGIN: ${{ secrets.ORIGIN }}   # opcional
+          DESTINATION: ${{ secrets.DESTINATION }} # opcional
+          DATE: ${{ secrets.DATE }} # opcional
         run: |
-          python smiles_scraper.py
+          python smiles_scraper.py || true
+
+      - name: Upload debug artifacts (if any)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smiles-scraper-debug
+          path: |
+            no_*_found_page.png
+            no_*_found_frame_*.html
+            *_page.png
+            *_page.html
+            *_frame_*.html
+            debug_*.png
+            debug_*.html
