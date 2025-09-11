@@ -1,11 +1,9 @@
 # smiles_monitor.py
 # Busca Smiles (GIG -> NRT/HND), gera CSV, filtra <=170k milhas
 # e notifica por Telegram a cada 3 horas
-# Agora com debug: salva JSON cru quando não encontra voos
 
 import os
 import time
-import csv
 import re
 import json
 import requests
@@ -18,8 +16,8 @@ from typing import Any, Dict, List, Optional
 ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
 START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
-DAYS_RANGE = int(os.getenv("DAYS_RANGE") or 90)
-INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3"))  # <-- FIXO 3h
+DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90") or "90")  # <-- fallback seguro
+INTERVAL_HOURS = int(os.getenv("INTERVAL_HOURS", "3") or "3")
 MILES_LIMIT = 170000  # <-- limite de milhas
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -50,14 +48,6 @@ def send_telegram(text: str) -> None:
     except Exception as e:
         print("Telegram send error:", e)
 
-def extract_number_from_text(s: str) -> Optional[int]:
-    if not s: return None
-    s2 = re.sub(r"[^\d]", "", s)
-    if not s2: return None
-    try:
-        return int(s2)
-    except:
-        return None
 
 def parse_duration_to_hours(dur: str) -> float:
     if not dur: return 9999.0
@@ -67,15 +57,21 @@ def parse_duration_to_hours(dur: str) -> float:
         h = int(m.group(1) or 0)
         mm = int(m.group(2) or 0)
         return h + mm / 60.0
-    m = re.search(r"(\d+)\s*h(?:\s*(\d+)\s*m)?", dur, re.I)
-    if m:
-        h = int(m.group(1))
-        mm = int(m.group(2) or 0)
-        return h + mm / 60.0
-    m = re.match(r"(\d{1,2}):(\d{2})", dur)
-    if m:
-        return int(m.group(1)) + int(m.group(2)) / 60.0
     return 9999.0
+
+
+def save_debug_response(dest: str, date_str: str, status: int, params: dict, data: Any):
+    """Salva o retorno bruto da API para debug"""
+    fname = f"last_response_{dest}_{date_str}.json"
+    debug = {
+        "status": status,
+        "params": params,
+        "data": data
+    }
+    with open(fname, "w", encoding="utf-8") as f:
+        json.dump(debug, f, ensure_ascii=False, indent=2)
+    print(f"[DEBUG] Resposta salva em {fname}")
+
 
 # -----------------------
 # Chamada API
@@ -94,14 +90,22 @@ def smiles_search(origin: str, dest: str, date_str: str) -> Optional[Dict[str, A
     }
     try:
         r = requests.get(API_URL, headers=HEADERS, params=params, timeout=30)
+        try:
+            data = r.json()
+        except:
+            data = r.text
+
+        save_debug_response(dest, date_str, r.status_code, params, data)
+
         if r.status_code == 200:
-            return r.json()
+            return data
         else:
             print(f"Smiles HTTP {r.status_code} for {origin}->{dest} {date_str}")
             return None
     except Exception as e:
         print("Request error:", e)
         return None
+
 
 # -----------------------
 # Extrai ofertas
@@ -115,31 +119,29 @@ def safe_get(d: dict, *path):
             return None
     return cur
 
+
 def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     offers = []
-    if not json_data:
+    if not json_data or not isinstance(json_data, dict):
         return offers
 
     candidates = None
-    for k in ("flights","itineraries","offers","data","items"):
+    for k in ("flights", "itineraries", "offers", "data", "items"):
         v = json_data.get(k)
         if isinstance(v, list):
             candidates = v
             break
-
-    if not candidates:
-        return offers
+    if not candidates: return offers
 
     for it in candidates:
         miles = (it.get("miles") or safe_get(it, "price", "miles"))
         try:
-            miles = int(extract_number_from_text(str(miles)))
+            miles = int(re.sub(r"[^\d]", "", str(miles)))
         except:
             miles = None
-        if not miles:
+        if not miles or miles > MILES_LIMIT:
             continue
 
-        taxes = safe_get(it, "miles", "taxes") or safe_get(it, "taxes")
         duration = it.get("duration") or safe_get(it, "totalDuration")
         carrier = safe_get(it, "carrier", "name") or it.get("airline")
         departure = safe_get(it, "departure") or safe_get(it, "departureTime")
@@ -152,7 +154,6 @@ def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
             "flight_arrival": arrival,
             "segments": len(segments) if isinstance(segments, list) else "?",
             "miles": miles,
-            "taxes": taxes,
             "duration_hours": parse_duration_to_hours(duration),
             "origin": ORIGIN,
             "destination": it.get("destination") or "?",
@@ -160,24 +161,14 @@ def extract_offers(json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         })
     return offers
 
-# -----------------------
-# Seleções
-# -----------------------
-def choose_bests(offers: List[Dict[str,Any]]):
-    if not offers: return {}
-    bests = {
-        "best_miles": min(offers, key=lambda x: x.get("miles", 10**12)),
-        "best_duration": min(offers, key=lambda x: x.get("duration_hours", 1e9)),
-    }
-    return bests
 
 # -----------------------
 # Run único
 # -----------------------
 def run_scan_once():
     start = datetime.fromisoformat(START_DATE).date()
+    all_offers = []
     for dest in DESTINATIONS:
-        all_offers = []
         for i in range(DAYS_RANGE):
             d = start + timedelta(days=i)
             dstr = d.strftime("%Y-%m-%d")
@@ -186,53 +177,12 @@ def run_scan_once():
             jsonr = smiles_search(ORIGIN, dest, dstr)
             if not jsonr: 
                 continue
-            offers = extract_offers(jsonr)
-            all_offers.extend(offers)
-
-        header = f"🔎 Varredura Smiles ({ORIGIN} → {dest})\nLimite configurado: {MILES_LIMIT:,} milhas\n"
+            all_offers.extend(extract_offers(jsonr))
 
         if not all_offers:
-            send_telegram(header + "⚠️ Nenhum voo encontrado.")
-            # salva resposta bruta para debug
-            with open("last_response.json", "w", encoding="utf-8") as f:
-                json.dump(jsonr, f, ensure_ascii=False, indent=2)
-            print("⚠️ Nenhum voo encontrado. JSON salvo em last_response.json")
-            continue
-
-        below_limit = [o for o in all_offers if o["miles"] <= MILES_LIMIT]
-        bests = choose_bests(all_offers)
-
-        msgs = [header]
-        if not below_limit:
-            msgs.append("⚠️ Nenhum voo abaixo do limite encontrado.\n")
-        for o in below_limit[:5]:  # só manda até 5 para não lotar o Telegram
-            line = f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}"
-            if o == bests.get("best_miles"):
-                line += "\n⚠️ Melhor milhas"
-            if o == bests.get("best_duration"):
-                line += "\n⚠️ Menor duração"
-            msgs.append(line)
-
-        # Sempre manda o melhor voo geral (mesmo acima do limite)
-        if bests:
-            o = bests.get("best_miles")
-            msgs.append("\n📌 Melhor voo encontrado (sem filtro):")
-            msgs.append(f"{o['miles']} milhas | {o.get('taxes','?')} R$ taxas | {o['duration_hours']:.1f}h | {o['origin']}→{o['destination']} em {o['date']}")
-
-        send_telegram("\n\n".join(msgs))
-
-# -----------------------
-# Loop principal
-# -----------------------
-def main_loop():
-    while True:
-        try:
-            run_scan_once()
-        except Exception as e:
-            print("Run error:", e)
-        print(f"Sleeping for {INTERVAL_HOURS} hours...")
-        time.sleep(INTERVAL_HOURS * 3600)
+            send_telegram(f"🔎 Varredura Smiles ({ORIGIN} → {dest})\n⚠️ Nenhum voo encontrado (JSON vazio).")
+        else:
+            send_telegram(f"🔎 Varredura Smiles ({ORIGIN} → {dest})\n✅ {len(all_offers)} voos capturados.")
 
 if __name__ == "__main__":
     run_scan_once()
-
