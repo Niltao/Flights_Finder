@@ -12,12 +12,8 @@ async def search_flight(origin, destination, date):
         context = await browser.new_context()
         page = await context.new_page()
 
-        # Acessa o site da Smiles
-        await page.goto("https://www.smiles.com.br/", timeout=60000)
-
-        # Clica no botão de Passagens (o menu principal mudou)
-        await page.wait_for_selector('a[href*="/emissoes"]', timeout=60000)
-        await page.click('a[href*="/emissoes"]')
+        # Vai direto para a página de emissão de passagens
+        await page.goto("https://www.smiles.com.br/emissoes", timeout=60000)
 
         # Campo Origem
         await page.wait_for_selector('input[name="origin"]', timeout=60000)
