@@ -24,6 +24,16 @@ def send_telegram(text: str):
         print("Telegram error:", e)
 
 
+async def save_file(filename: str, content: str):
+    """Salva conteúdo em arquivo de debug"""
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"✅ Saved {filename} (cwd={os.getcwd()})")
+    except Exception as e:
+        print(f"❌ Erro ao salvar {filename}: {e}")
+
+
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -36,32 +46,31 @@ async def run_scraper():
 
             # Salva HTML principal
             html = await page.content()
-            with open("debug_main.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            print("✅ Saved debug_main.html")
+            await save_file("debug_main.html", html)
 
-            # Salva screenshot
-            await page.screenshot(path="debug_main.png", full_page=True)
+            # Salva screenshot principal
+            try:
+                await page.screenshot(path="debug_main.png", full_page=True)
+                print("✅ Saved debug_main.png")
+            except Exception as e:
+                print("⚠️ Erro ao salvar screenshot principal:", e)
 
             # 2. Lista frames disponíveis
             frames_info = []
             for i, f in enumerate(page.frames):
                 frames_info.append(f"{i}: {f.url}")
                 try:
-                    content = await f.content()
-                    with open(f"debug_frame_{i}.html", "w", encoding="utf-8") as ff:
-                        ff.write(content)
+                    cont = await f.content()
+                    await save_file(f"debug_frame_{i}.html", cont)
                 except Exception as e:
                     print(f"⚠️ Não consegui salvar frame {i}: {e}")
 
-            with open("debug_frames.txt", "w", encoding="utf-8") as f:
-                f.write("\n".join(frames_info))
-            print("✅ Frames salvos em debug_frames.txt")
+            await save_file("debug_frames.txt", "\n".join(frames_info))
 
-            # 3. Escolhe um frame de busca (ignora chat/about:blank)
+            # 3. Escolhe frame principal de passagens
             frame = None
             for f in page.frames:
-                if "smiles" in f.url and "chat" not in f.url and "smooch" not in f.url and "about:" not in f.url:
+                if "smiles" in f.url and "passagens" in f.url and "chat" not in f.url and "smooch" not in f.url:
                     frame = f
                     break
 
@@ -71,91 +80,40 @@ async def run_scraper():
 
             print("✅ Usando frame:", frame.url)
 
-            # 4. Preenche os campos dentro do frame de passagens
-            frame_html = await frame.content()
-            with open("debug_passagens_frame.html", "w", encoding="utf-8") as f:
-                f.write(frame_html)
-            print("✅ Saved debug_passagens_frame.html")
-    
-            # Seletores alternativos
-            origin_selectors = [
-                "input[name='origin']",
-                "input[placeholder*='Origem']",
-                "input[aria-label*='Origem']",
-                "input[id*='origin']",
-                "input[type='text']"
-            ]
-            dest_selectors = [
-                "input[name='destination']",
-                "input[placeholder*='Destino']",
-                "input[aria-label*='Destino']",
-                "input[id*='destination']",
-                "input[type='text']"
-            ]
-            date_selectors = [
-                "input[name='departureDate']",
-                "input[placeholder*='Ida']",
-                "input[aria-label*='Ida']",
-                "input[id*='departureDate']"
-            ]
-    
-            async def safe_fill(selectors, value):
-                for sel in selectors:
-                    try:
-                        await frame.fill(sel, value, timeout=5000)
-                        print(f"✅ Preencheu {value} em {sel}")
-                        return True
-                    except:
-                        pass
-                print(f"⚠️ Nenhum seletor funcionou para {value}")
-                return False
-    
-            await safe_fill(origin_selectors, ORIGIN)
-            await safe_fill(dest_selectors, DESTINATIONS[0])
-            await safe_fill(date_selectors, START_DATE)
-    
-            # Botão Buscar
-            try:
-                await frame.click("button:has-text('Buscar')", timeout=10000)
-                print("✅ Cliquei no botão Buscar")
-            except:
-                print("⚠️ Não achei botão Buscar")
-
-
-            # 5. Salva HTML do frame de passagens
-            frame_html = await frame.content()
-            with open("debug_passagens_frame.html", "w", encoding="utf-8") as f:
-                f.write(frame_html)
-            print("✅ Saved debug_passagens_frame.html")
-    
-            # Lista todos os inputs do frame
+            # 4. Salva inputs do frame
             inputs = await frame.query_selector_all("input")
-            print(f"🔎 Foram encontrados {len(inputs)} inputs no frame")
-            with open("debug_inputs.txt", "w", encoding="utf-8") as f:
-                for i, inp in enumerate(inputs):
-                    try:
-                        attrs = await frame.evaluate(
-                            """el => {
-                                let atts = {};
-                                for (let a of el.attributes) { atts[a.name] = a.value; }
-                                return atts;
-                            }""",
-                            inp
-                        )
-                        f.write(f"Input {i}: {attrs}\n")
-                    except:
-                        f.write(f"Input {i}: erro ao ler atributos\n")
-            print("✅ Saved debug_inputs.txt")
-    
-            # Screenshot da página inteira (em vez do frame)
-            await page.screenshot(path="debug_results.png", full_page=True)
-            print("✅ Saved debug_results.png")
+            inputs_data = []
+            for i, inp in enumerate(inputs):
+                try:
+                    attrs = await frame.evaluate(
+                        """el => {
+                            let atts = {};
+                            for (let a of el.attributes) { atts[a.name] = a.value; }
+                            return atts;
+                        }""",
+                        inp
+                    )
+                    inputs_data.append(f"Input {i}: {attrs}")
+                except:
+                    inputs_data.append(f"Input {i}: erro ao ler atributos")
 
+            await save_file("debug_inputs.txt", "\n".join(inputs_data))
 
-    send_telegram("🔎 Execução finalizada. Veja artifacts (debug_main.html, debug_frames.txt, debug_results.html).")
+            # 5. Screenshot da página
+            try:
+                await page.screenshot(path="debug_results.png", full_page=True)
+                print("✅ Saved debug_results.png")
+            except Exception as e:
+                print("⚠️ Erro ao salvar debug_results.png:", e)
+
+        except Exception as e:
+            print("❌ Erro durante execução:", e)
+
+        finally:
+            await browser.close()
+
+    send_telegram("🔎 Execução finalizada. Veja artifacts (debug_main.html, debug_inputs.txt, etc).")
 
 
 if __name__ == "__main__":
     asyncio.run(run_scraper())
-
-
