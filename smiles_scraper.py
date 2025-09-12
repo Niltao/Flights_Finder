@@ -4,7 +4,7 @@ import requests
 import os
 from playwright.async_api import async_playwright
 
-ORIGIN = os.getenv("ORIGIN", "RIO")
+ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATION = os.getenv("DESTINATION", "HND")
 DATE = os.getenv("DATE", "2025-09-15")
 
@@ -16,7 +16,10 @@ def send_telegram(text: str) -> None:
         print("⚠️ Telegram não configurado.")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"})
+    try:
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"})
+    except Exception as e:
+        print("Erro Telegram:", e)
 
 async def search_flight(origin, destination, date):
     async with async_playwright() as p:
@@ -24,33 +27,39 @@ async def search_flight(origin, destination, date):
         context = await browser.new_context()
         page = await context.new_page()
 
-        # 1) Abre a página inicial
-        await page.goto("https://www.smiles.com.br/", timeout=60000)
+        print("🌍 Acessando site Smiles...")
+        await page.goto("https://www.smiles.com.br/", timeout=90000)
 
-        # 2) Clica no menu "Passagens Aéreas"
-        await page.wait_for_selector('a[href*="passagens-aereas"], a:has-text("Passagens")', timeout=60000)
-        await page.click('a[href*="passagens-aereas"], a:has-text("Passagens")')
-
-        # 3) Espera os campos carregarem
-        await page.wait_for_selector('input[name="origin"], input[placeholder*="Origem"]', timeout=60000)
-        await page.fill('input[name="origin"], input[placeholder*="Origem"]', origin)
+        # Espera a barra de busca principal
+        print("⌛ Esperando campo de origem...")
+        await page.wait_for_selector("input[placeholder*='Digite a origem']", timeout=90000)
+        await page.fill("input[placeholder*='Digite a origem']", origin)
         await page.keyboard.press("Enter")
 
-        await page.wait_for_selector('input[name="destination"], input[placeholder*="Destino"]', timeout=60000)
-        await page.fill('input[name="destination"], input[placeholder*="Destino"]', destination)
+        print("⌛ Esperando campo de destino...")
+        await page.wait_for_selector("input[placeholder*='Digite o destino']", timeout=90000)
+        await page.fill("input[placeholder*='Digite o destino']", destination)
         await page.keyboard.press("Enter")
 
-        await page.wait_for_selector('input[name="departureDate"], input[placeholder*="Ida"]', timeout=60000)
-        await page.fill('input[name="departureDate"], input[placeholder*="Ida"]', date)
+        print("⌛ Preenchendo data...")
+        await page.wait_for_selector("input[placeholder*='Ida']", timeout=90000)
+        await page.fill("input[placeholder*='Ida']", date)
         await page.keyboard.press("Enter")
 
-        # 4) Buscar
-        await page.wait_for_selector('button[type="submit"], button:has-text("Buscar")', timeout=60000)
-        await page.click('button[type="submit"], button:has-text("Buscar")')
+        # Clica em buscar
+        print("🔎 Clicando em buscar...")
+        await page.wait_for_selector("button:has-text('Buscar')", timeout=90000)
+        await page.click("button:has-text('Buscar')")
 
-        # 5) Capturar resultados
-        await page.wait_for_selector("div[class*='flight-card']", timeout=60000)
-        flights = await page.locator("div[class*='flight-card']").all_inner_texts()
+        # Aguarda resultados
+        print("⌛ Aguardando resultados...")
+        try:
+            await page.wait_for_selector("div[class*='flight-card']", timeout=120000)
+            flights = await page.locator("div[class*='flight-card']").all_inner_texts()
+        except Exception as e:
+            print("❌ Nenhum resultado carregado:", e)
+            await page.screenshot(path="debug_no_results.png")
+            flights = []
 
         await browser.close()
         return flights
@@ -58,12 +67,13 @@ async def search_flight(origin, destination, date):
 async def main():
     flights = await search_flight(ORIGIN, DESTINATION, DATE)
     if flights:
-        text = "✈️ Resultados:\n\n" + "\n\n".join(flights)
+        text = "✈️ Resultados encontrados:\n\n" + "\n\n".join(flights[:5])  # mostra só 5 para não lotar
         print(text)
         send_telegram(text)
     else:
-        print("Nenhum voo encontrado.")
-        send_telegram("⚠️ Nenhum voo encontrado.")
+        msg = "⚠️ Nenhum voo encontrado."
+        print(msg)
+        send_telegram(msg)
 
 if __name__ == "__main__":
     asyncio.run(main())
