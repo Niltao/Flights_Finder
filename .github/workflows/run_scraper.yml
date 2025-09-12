@@ -1,48 +1,41 @@
 name: Run Smiles Scraper
 
 on:
+  schedule:
+    - cron: "0 */3 * * *"   # roda a cada 3 horas
   workflow_dispatch:
 
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Install Playwright browsers and system deps
-        run: |
-          python -m playwright install --with-deps chromium
+          playwright install chromium
 
       - name: Run scraper
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ORIGIN: ${{ secrets.ORIGIN }}   # opcional
-          DESTINATION: ${{ secrets.DESTINATION }} # opcional
-          DATE: ${{ secrets.DATE }} # opcional
-        run: |
-          python smiles_scraper.py || true
+          ORIGIN: ${{ secrets.ORIGIN }}
+          DESTINATION: ${{ secrets.DESTINATION }}
+          DATE: ${{ secrets.DATE }}
+        run: python smiles_scraper.py
 
-      - name: Upload debug artifacts (if any)
+      - name: Upload debug artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smiles-scraper-debug
+          name: debug-files
           path: |
-            no_*_found_page.png
-            no_*_found_frame_*.html
-            *_page.png
-            *_page.html
-            *_frame_*.html
-            debug_*.png
-            debug_*.html
+            *.png
+            *.html
+            *.json
