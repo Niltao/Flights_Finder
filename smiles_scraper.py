@@ -122,22 +122,40 @@ async def run_scraper():
                 print("⚠️ Não achei botão Buscar")
 
 
-            # 5. Salva HTML após buscar
-            result_html = await frame.content()
-            with open("debug_results.html", "w", encoding="utf-8") as f:
-                f.write(result_html)
-            await frame.screenshot(path="debug_results.png", full_page=True)
-            print("✅ Saved debug_results.html and debug_results.png")
+            # 5. Salva HTML do frame de passagens
+            frame_html = await frame.content()
+            with open("debug_passagens_frame.html", "w", encoding="utf-8") as f:
+                f.write(frame_html)
+            print("✅ Saved debug_passagens_frame.html")
+    
+            # Lista todos os inputs do frame
+            inputs = await frame.query_selector_all("input")
+            print(f"🔎 Foram encontrados {len(inputs)} inputs no frame")
+            with open("debug_inputs.txt", "w", encoding="utf-8") as f:
+                for i, inp in enumerate(inputs):
+                    try:
+                        attrs = await frame.evaluate(
+                            """el => {
+                                let atts = {};
+                                for (let a of el.attributes) { atts[a.name] = a.value; }
+                                return atts;
+                            }""",
+                            inp
+                        )
+                        f.write(f"Input {i}: {attrs}\n")
+                    except:
+                        f.write(f"Input {i}: erro ao ler atributos\n")
+            print("✅ Saved debug_inputs.txt")
+    
+            # Screenshot da página inteira (em vez do frame)
+            await page.screenshot(path="debug_results.png", full_page=True)
+            print("✅ Saved debug_results.png")
 
-        except Exception as e:
-            print("❌ Erro durante execução:", e)
-
-        finally:
-            await browser.close()
 
     send_telegram("🔎 Execução finalizada. Veja artifacts (debug_main.html, debug_frames.txt, debug_results.html).")
 
 
 if __name__ == "__main__":
     asyncio.run(run_scraper())
+
 
