@@ -2,11 +2,11 @@ name: Run Smiles Scraper
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # roda a cada 3 horas
+    - cron: "0 */3 * * *"   # a cada 3h
   workflow_dispatch:
 
 jobs:
-  run-scraper:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -14,27 +14,19 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          playwright install chromium
+          playwright install --with-deps chromium
 
       - name: Run scraper
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ORIGIN: ${{ secrets.ORIGIN }}
-          DESTINATION: ${{ secrets.DESTINATION }}
-          DATE: ${{ secrets.DATE }}
+          DESTINATIONS: ${{ secrets.DESTINATIONS }}
+          START_DATE: ${{ secrets.START_DATE }}
+          DAYS_RANGE: ${{ secrets.DAYS_RANGE }}
         run: python smiles_scraper.py
-
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-files
-          path: |
-            *.png
-            *.html
