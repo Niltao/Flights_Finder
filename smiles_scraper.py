@@ -71,12 +71,56 @@ async def run_scraper():
 
             print("✅ Usando frame:", frame.url)
 
-            # 4. Preenche os campos
-            await frame.fill("input[name='origin']", ORIGIN)
-            await frame.fill("input[name='destination']", DESTINATIONS[0])
-            await frame.fill("input[name='departureDate']", START_DATE)
-            await frame.click("button:has-text('Buscar')")
-            await frame.wait_for_timeout(8000)
+            # 4. Preenche os campos dentro do frame de passagens
+            frame_html = await frame.content()
+            with open("debug_passagens_frame.html", "w", encoding="utf-8") as f:
+                f.write(frame_html)
+            print("✅ Saved debug_passagens_frame.html")
+    
+            # Seletores alternativos
+            origin_selectors = [
+                "input[name='origin']",
+                "input[placeholder*='Origem']",
+                "input[aria-label*='Origem']",
+                "input[id*='origin']",
+                "input[type='text']"
+            ]
+            dest_selectors = [
+                "input[name='destination']",
+                "input[placeholder*='Destino']",
+                "input[aria-label*='Destino']",
+                "input[id*='destination']",
+                "input[type='text']"
+            ]
+            date_selectors = [
+                "input[name='departureDate']",
+                "input[placeholder*='Ida']",
+                "input[aria-label*='Ida']",
+                "input[id*='departureDate']"
+            ]
+    
+            async def safe_fill(selectors, value):
+                for sel in selectors:
+                    try:
+                        await frame.fill(sel, value, timeout=5000)
+                        print(f"✅ Preencheu {value} em {sel}")
+                        return True
+                    except:
+                        pass
+                print(f"⚠️ Nenhum seletor funcionou para {value}")
+                return False
+    
+            await safe_fill(origin_selectors, ORIGIN)
+            await safe_fill(dest_selectors, DESTINATIONS[0])
+            await safe_fill(date_selectors, START_DATE)
+    
+            # Botão Buscar
+            try:
+                await frame.click("button:has-text('Buscar')", timeout=10000)
+                print("✅ Cliquei no botão Buscar")
+            except:
+                print("⚠️ Não achei botão Buscar")
+
 
             # 5. Salva HTML após buscar
             result_html = await frame.content()
@@ -96,3 +140,4 @@ async def run_scraper():
 
 if __name__ == "__main__":
     asyncio.run(run_scraper())
+
