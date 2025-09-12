@@ -24,16 +24,6 @@ def send_telegram(text: str):
         print("Telegram error:", e)
 
 
-async def save_file(filename: str, content: str):
-    """Salva conteúdo em arquivo de debug"""
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"✅ Saved {filename} (cwd={os.getcwd()})")
-    except Exception as e:
-        print(f"❌ Erro ao salvar {filename}: {e}")
-
-
 async def run_scraper():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -43,68 +33,47 @@ async def run_scraper():
             # 1. Abre a página de passagens
             await page.goto("https://www.smiles.com.br/passagens-aereas", timeout=60000)
             await page.wait_for_timeout(5000)
+            print("✅ Página carregada")
 
-            # Salva HTML principal
-            html = await page.content()
-            await save_file("debug_main.html", html)
-
-            # Salva screenshot principal
-            try:
-                await page.screenshot(path="debug_main.png", full_page=True)
-                print("✅ Saved debug_main.png")
-            except Exception as e:
-                print("⚠️ Erro ao salvar screenshot principal:", e)
-
-            # 2. Lista frames disponíveis
-            frames_info = []
-            for i, f in enumerate(page.frames):
-                frames_info.append(f"{i}: {f.url}")
-                try:
-                    cont = await f.content()
-                    await save_file(f"debug_frame_{i}.html", cont)
-                except Exception as e:
-                    print(f"⚠️ Não consegui salvar frame {i}: {e}")
-
-            await save_file("debug_frames.txt", "\n".join(frames_info))
-
-            # 3. Escolhe frame principal de passagens
+            # 2. Seleciona frame correto
             frame = None
             for f in page.frames:
-                if "smiles" in f.url and "passagens" in f.url and "chat" not in f.url and "smooch" not in f.url:
+                if "smiles" in f.url and "passagens" in f.url and "chat" not in f.url:
                     frame = f
                     break
 
             if not frame:
-                print("⚠️ Nenhum frame de busca encontrado. Veja debug_frames.txt.")
+                print("⚠️ Nenhum frame encontrado")
                 return
 
             print("✅ Usando frame:", frame.url)
 
-            # 4. Salva inputs do frame
-            inputs = await frame.query_selector_all("input")
-            inputs_data = []
-            for i, inp in enumerate(inputs):
-                try:
-                    attrs = await frame.evaluate(
-                        """el => {
-                            let atts = {};
-                            for (let a of el.attributes) { atts[a.name] = a.value; }
-                            return atts;
-                        }""",
-                        inp
-                    )
-                    inputs_data.append(f"Input {i}: {attrs}")
-                except:
-                    inputs_data.append(f"Input {i}: erro ao ler atributos")
-
-            await save_file("debug_inputs.txt", "\n".join(inputs_data))
-
-            # 5. Screenshot da página
+            # 3. Preenche os campos de busca
             try:
-                await page.screenshot(path="debug_results.png", full_page=True)
-                print("✅ Saved debug_results.png")
+                await frame.fill("#inputOrigin", ORIGIN)
+                await frame.fill("#inputDestination", DESTINATIONS[0])
+                await frame.fill("#_smilesflightsearchportlet_WAR_smilesbookingportlet_departure_date", START_DATE)
+                print("✅ Campos preenchidos")
             except Exception as e:
-                print("⚠️ Erro ao salvar debug_results.png:", e)
+                print("❌ Erro ao preencher campos:", e)
+                return
+
+            # 4. Clica no botão de buscar
+            try:
+                await frame.click("button[type='submit']", timeout=10000)
+                print("✅ Cliquei no botão Buscar")
+            except Exception as e:
+                print("⚠️ Não achei botão Buscar:", e)
+
+            # 5. Aguarda resultados
+            await page.wait_for_timeout(10000)
+            html = await frame.content()
+            with open("debug_results.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            print("✅ Saved debug_results.html")
+
+            await page.screenshot(path="debug_results.png", full_page=True)
+            print("✅ Saved debug_results.png")
 
         except Exception as e:
             print("❌ Erro durante execução:", e)
@@ -112,7 +81,7 @@ async def run_scraper():
         finally:
             await browser.close()
 
-    send_telegram("🔎 Execução finalizada. Veja artifacts (debug_main.html, debug_inputs.txt, etc).")
+    send_telegram("🔎 Execução finalizada. Veja artifacts para os resultados.")
 
 
 if __name__ == "__main__":
