@@ -2,7 +2,7 @@ name: Run Smiles Scraper
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # a cada 3h
+    - cron: "0 */3 * * *"   # roda a cada 3 horas
   workflow_dispatch:
 
 jobs:
@@ -10,17 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          playwright install --with-deps chromium
-
+        run: pip install playwright requests && playwright install chromium
       - name: Run scraper
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
