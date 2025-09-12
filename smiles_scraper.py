@@ -75,10 +75,29 @@ async def run_scraper():
             print("✅ Usando frame:", frame.url)
 
             # 3. Preenche os campos
-            await frame.fill("#inputOrigin", ORIGIN)
-            await frame.fill("#inputDestination", DESTINATIONS[0])
-            await frame.fill("#_smilesflightsearchportlet_WAR_smilesbookingportlet_departure_date", START_DATE)
-            print("✅ Campos preenchidos")
+            try:
+                await frame.fill("#inputOrigin", ORIGIN)
+                await frame.fill("#inputDestination", DESTINATIONS[0])
+                print("✅ Origem e destino preenchidos")
+            
+                # Força data via JS, pois o input não é visível/editável
+                await frame.evaluate(
+                    """(sel, value) => {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            el.value = value;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }""",
+                    "#_smilesflightsearchportlet_WAR_smilesbookingportlet_departure_date",
+                    START_DATE
+                )
+                print("✅ Data preenchida via JS")
+            except Exception as e:
+                save_text_file("error_log.txt", f"Erro ao preencher campos: {e}")
+                return
+
 
             # 4. Buscar
             await frame.click("button[type='submit']", timeout=10000)
@@ -104,3 +123,4 @@ async def run_scraper():
 
 if __name__ == "__main__":
     asyncio.run(run_scraper())
+
