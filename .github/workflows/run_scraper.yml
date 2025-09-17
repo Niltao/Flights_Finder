@@ -1,8 +1,8 @@
-name: Smiles Scraper
+name: Run Smiles Scraper
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # roda a cada 3 horas
+    - cron: "0 */3 * * *" # a cada 3 horas
   workflow_dispatch:
 
 jobs:
@@ -10,10 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -26,6 +27,14 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ORIGIN: ${{ secrets.ORIGIN }}
           DESTINATIONS: ${{ secrets.DESTINATIONS }}
-          START_DATE: ${{ secrets.START_DATE }}
-          DAYS_RANGE: ${{ secrets.DAYS_RANGE }}
+          DATE: ${{ secrets.DATE }}
         run: python smiles_scraper.py
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-html
+          path: |
+            debug_fail_*.html
+            debug_fail_*.png
