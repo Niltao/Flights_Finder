@@ -1,68 +1,79 @@
 import os
 import asyncio
-from datetime import datetime
 from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
+import re
 import requests
+from datetime import datetime
 
-# Configurações
+# Config
 ORIGIN = os.getenv("ORIGIN", "GIG")
-DESTINATIONS = os.getenv("DESTINATIONS", "NRT").split(",")
-START_DATE = os.getenv("START_DATE", "2025-09-10")   # YYYY-MM-DD
-DAYS_RANGE = int(os.getenv("DAYS_RANGE", "1"))       # forçado p/ debug
+DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
+START_DATE = os.getenv("START_DATE", "2025-09-10")
+DAYS_RANGE = int(os.getenv("DAYS_RANGE", "5"))
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def send_telegram(text: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram not configured")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    try:
-        r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=15)
-        print("Telegram status:", r.status_code)
-    except Exception as e:
-        print("Telegram error:", e)
+def send_telegram(msg: str):
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
 
-async def run_scraper():
+async def scrape_flights():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
-        # 1. Acessa a home
-        await page.goto("https://www.smiles.com.br/home", timeout=60000)
-        await page.wait_for_timeout(5000)
-        html = await page.content()
-        with open("debug_home.html", "w", encoding="utf-8") as f:
-            f.write(html)
-        print("✅ Saved debug_home.html")
+        results = []
 
-        # 2. Preenche campos e clica buscar
-        try:
-            await page.fill("input[name='origin']", ORIGIN)
-            await page.fill("input[name='destination']", DESTINATIONS[0])
-            await page.fill("input[name='departureDate']", START_DATE)
-            await page.click("button:has-text('Buscar')")
-            await page.wait_for_timeout(8000)
-            html = await page.content()
-            with open("debug_after_search.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            print("✅ Saved debug_after_search.html")
-        except Exception as e:
-            print("Erro ao preencher ou buscar:", e)
+        for dest in DESTINATIONS:
+            url = (
+                f"https://www.smiles.com.br/emissao-com-milhas/voos?cabin=all"
+                f"&originAirportCode={ORIGIN}&destinationAirportCode={dest}"
+                f"&departureDate={START_DATE}&adults=1&children=0&infants=0"
+            )
+            print(f"🔎 Buscando: {ORIGIN} → {dest}")
+            await page.goto(url, timeout=60000)
 
-        # 3. Espera resultados
-        try:
-            await page.wait_for_timeout(10000)  # dá tempo para carregar
+            # Espera até os cards de voo aparecerem
+            await page.wait_for_selector("div.ant-card", timeout=60000)
+
+            # Salva o HTML renderizado para debug
             html = await page.content()
-            with open("debug_results.html", "w", encoding="utf-8") as f:
+            with open(f"debug_rendered_{dest}.html", "w", encoding="utf-8") as f:
                 f.write(html)
-            print("✅ Saved debug_results.html")
-        except Exception as e:
-            print("Erro ao capturar resultados:", e)
+
+            # Parse com BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+            cards = soup.select("div.ant-card")
+
+            for card in cards:
+                text = card.get_text(" ", strip=True)
+
+                miles = None
+                m = re.search(r"(\d[\d.]+)\s*milhas", text, re.I)
+                if m:
+                    miles = int(m.group(1).replace(".", ""))
+
+                price = None
+                m2 = re.search(r"R\$\s*([\d.,]+)", text)
+                if m2:
+                    price = m2.group(1)
+
+                if miles:
+                    results.append(
+                        f"{ORIGIN}→{dest} {START_DATE} | {miles} milhas | {price or '?'}"
+                    )
 
         await browser.close()
 
-    send_telegram("🔎 Debug finalizado. Arquivos HTML salvos.")
+        if results:
+            msg = "✈️ Resultados encontrados:\n" + "\n".join(results)
+        else:
+            msg = "⚠️ Nenhum voo encontrado."
+
+        print(msg)
+        send_telegram(msg)
 
 if __name__ == "__main__":
-    asyncio.run(run_scraper())
+    asyncio.run(scrape_flights())
