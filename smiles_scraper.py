@@ -7,7 +7,7 @@ import requests
 # Config
 ORIGIN = os.getenv("ORIGIN", "GIG")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
-DATE = os.getenv("DATE", "2025-09-15")
+DATE = os.getenv("DATE", "2025-09-20")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -83,3 +83,4 @@ async def scrape_flights():
 
 if __name__ == "__main__":
     asyncio.run(scrape_flights())
+
