@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 # -----------------------
 # CONFIG
 # -----------------------
-ORIGIN = os.getenv("ORIGIN", "GIG")
+ORIGIN = os.getenv("ORIGIN", "GRU")
 DESTINATIONS = os.getenv("DESTINATIONS", "NRT,HND").split(",")
 START_DATE = os.getenv("START_DATE", "2025-09-10")  # YYYY-MM-DD
 DAYS_RANGE = int(os.getenv("DAYS_RANGE", "90"))
@@ -119,3 +119,4 @@ def run_scan_once():
 # -----------------------
 if __name__ == "__main__":
     run_scan_once()
+
